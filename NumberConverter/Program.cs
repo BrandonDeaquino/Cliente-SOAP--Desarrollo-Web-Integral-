@@ -1,9 +1,9 @@
 ﻿using System;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
-using System.Net.Http;
-using GTranslate.Translators;
+using Humanizer;
 
 class Program
 {
@@ -21,79 +21,55 @@ class Program
         }
     }
     
-    static async Task ProcessRequest(HttpListenerContext context)
+    static void ProcessRequest(HttpListenerContext context)
     {
+        var response = context.Response;
         var query = context.Request.QueryString;
         var num = query["n"];
         
         if (string.IsNullOrEmpty(num))
         {
-            var response = context.Response;
-            var buffer = Encoding.UTF8.GetBytes("Usa: ?n=10");
-            response.ContentLength64 = buffer.Length;
-            await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+            byte[] bufferData = Encoding.UTF8.GetBytes("Usa: ?n=10 (número entre 0 y 9999)");
+            response.ContentLength64 = bufferData.Length;
+            response.OutputStream.Write(bufferData, 0, bufferData.Length);
             response.Close();
             return;
         }
         
         try
         {
-            var resultadoIngles = await ConsumirSoapAsync(int.Parse(num));
+            if (!int.TryParse(num, out int number))
+            {
+                byte[] bufferError = Encoding.UTF8.GetBytes("Error: El parámetro debe ser un número");
+                response.ContentLength64 = bufferError.Length;
+                response.OutputStream.Write(bufferError, 0, bufferError.Length);
+                response.Close();
+                return;
+            }
             
-            var translator = new GoogleTranslator();
-            var result = await translator.TranslateAsync(resultadoIngles, "es");
+            if (number < 0 || number > 9999)
+            {
+                byte[] bufferRange = Encoding.UTF8.GetBytes("Error: Número fuera de rango (0-9999)");
+                response.ContentLength64 = bufferRange.Length;
+                response.OutputStream.Write(bufferRange, 0, bufferRange.Length);
+                response.Close();
+                return;
+            }
             
-            var response = context.Response;
-            var buffer = Encoding.UTF8.GetBytes(result.Translation);
-            response.ContentLength64 = buffer.Length;
-            await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+            var culture = new CultureInfo("es-ES");
+            var resultado = number.ToWords(culture);
+            
+            byte[] bufferResult = Encoding.UTF8.GetBytes(resultado);
+            response.ContentLength64 = bufferResult.Length;
+            response.OutputStream.Write(bufferResult, 0, bufferResult.Length);
             response.Close();
         }
         catch (Exception ex)
         {
-            var response = context.Response;
-            var buffer = Encoding.UTF8.GetBytes($"Error: {ex.Message}");
-            response.ContentLength64 = buffer.Length;
-            await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+            byte[] bufferEx = Encoding.UTF8.GetBytes($"Error: {ex.Message}");
+            response.ContentLength64 = bufferEx.Length;
+            response.OutputStream.Write(bufferEx, 0, bufferEx.Length);
             response.Close();
         }
-    }
-    
-    static async Task<string> ConsumirSoapAsync(int num)
-    {
-        string soapRequest = $@"<?xml version=""1.0"" encoding=""utf-8""?>
-<soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
-  <soap:Body>
-    <NumberToWords xmlns=""http://www.dataaccess.com/webservicesserver/"">
-      <ubiNum>{num}</ubiNum>
-    </NumberToWords>
-  </soap:Body>
-</soap:Envelope>";
-        
-        using var client = new HttpClient();
-        client.Timeout = TimeSpan.FromSeconds(60);
-        
-        var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
-        content.Headers.Add("SOAPAction", "\"http://www.dataaccess.com/webservicesserver/NumberToWords\"");
-        
-        var response = await client.PostAsync(
-            "https://www.dataaccess.com/webservicesserver/NumberConversion.wso",
-            content
-        );
-        
-        var responseBody = await response.Content.ReadAsStringAsync();
-        
-        var match = System.Text.RegularExpressions.Regex.Match(
-            responseBody,
-            @"<[^>]*NumberToWordsResult[^>]*>(.*?)</[^>]*NumberToWordsResult>",
-            System.Text.RegularExpressions.RegexOptions.Singleline
-        );
-        
-        if (match.Success)
-        {
-            return match.Groups[1].Value.Trim();
-        }
-        
-        return "No se encontró resultado";
     }
 }
