@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Net.Http;
+using GTranslate.Translators;
 
 class Program
 {
@@ -37,10 +38,13 @@ class Program
         
         try
         {
-            var result = await ConsumirSoapAsync(int.Parse(num));
+            var resultadoIngles = await ConsumirSoapAsync(int.Parse(num));
+            
+            var translator = new GoogleTranslator();
+            var result = await translator.TranslateAsync(resultadoIngles, "es");
             
             var response = context.Response;
-            var buffer = Encoding.UTF8.GetBytes(result);
+            var buffer = Encoding.UTF8.GetBytes(result.Translation);
             response.ContentLength64 = buffer.Length;
             await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             response.Close();
@@ -78,6 +82,7 @@ class Program
         );
         
         var responseBody = await response.Content.ReadAsStringAsync();
+        
         var match = System.Text.RegularExpressions.Regex.Match(
             responseBody,
             @"<[^>]*NumberToWordsResult[^>]*>(.*?)</[^>]*NumberToWordsResult>",
