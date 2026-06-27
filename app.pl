@@ -3,6 +3,8 @@ use warnings;
 use HTTP::Daemon;
 use HTTP::Status;
 use LWP::UserAgent;
+use WWW::Google::Translate;
+use JSON;
 
 my $daemon = HTTP::Daemon->new(
     LocalPort => 5000,
@@ -43,8 +45,20 @@ while (my $connection = $daemon->accept) {
             if ($response->is_success) {
                 my $content = $response->content;
                 if ($content =~ /<[^>]*NumberToWordsResult[^>]*>(.*?)<\/[^>]*NumberToWordsResult>/) {
-                    $resultado = $1;
-                    $resultado =~ s/^\s+|\s+$//g;
+                    my $resultado_ingles = $1;
+                    $resultado_ingles =~ s/^\s+|\s+$//g;
+                    
+                    eval {
+                        my $trans = WWW::Google::Translate->new();
+                        $resultado = $trans->translate(
+                            source => 'en',
+                            target => 'es',
+                            text => $resultado_ingles
+                        );
+                    };
+                    if ($@) {
+                        $resultado = traducir_con_api_directa($resultado_ingles);
+                    }
                 } else {
                     $resultado = "No se encontró resultado";
                 }
@@ -59,4 +73,32 @@ while (my $connection = $daemon->accept) {
     }
     $connection->close;
     undef($connection);
+}
+
+sub traducir_con_api_directa {
+    my ($texto) = @_;
+ 
+    my $texto_escaped = $texto;
+    $texto_escaped =~ s/ /%20/g;
+    $texto_escaped =~ s/"/%22/g;
+ 
+    my $url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=$texto_escaped";
+ 
+    my $ua = LWP::UserAgent->new;
+    $ua->timeout(10);
+    $ua->ssl_opts( verify_hostname => 0 );
+    
+    my $response = $ua->get($url);
+ 
+    if ($response->is_success) {
+        my $data = decode_json($response->content);
+        if ($data && ref($data) eq 'ARRAY' && $data->[0]) {
+            my $traduccion = '';
+            foreach my $item (@{$data->[0]}) {
+                $traduccion .= $item->[0];
+            }
+            return $traduccion;
+        }
+    }
+    return $texto;  
 }
