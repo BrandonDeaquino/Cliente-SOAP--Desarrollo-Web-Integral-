@@ -1,97 +1,96 @@
 package main
 
 import (
-	"encoding/json"
-	"encoding/xml"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
-	"github.com/hooklift/gowsdl/soap"
+	"strconv"
 )
 
-type NumberToWords struct {
-	XMLName xml.Name `xml:"http://www.dataaccess.com/webservicesserver/ NumberToWords"`
-	UbiNum  int      `xml:"ubiNum"`
-}
+func numberToSpanish(n int) string {
+	unidades := []string{"cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"}
+	especiales := []string{"diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"}
+	decenas := []string{"", "diez", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"}
+	centenas := []string{"", "cien", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"}
+	if n == 0 {
+		return "cero"
+	}
 
-type NumberToWordsResponse struct {
-	XMLName xml.Name `xml:"http://www.dataaccess.com/webservicesserver/ NumberToWordsResponse"`
-	Result  string   `xml:"NumberToWordsResult"`
-}
+	if n < 10 {
+		return unidades[n]
+	}
 
-func main() {
-	http.HandleFunc("/", handler)
-	fmt.Println("Servidor iniciado en http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+	if n < 20 {
+		return especiales[n-10]
+	}
+
+	if n < 30 {
+		if n == 20 {
+			return "veinte"
+		}
+		return "veinti" + unidades[n-20]
+	}
+
+	if n < 100 {
+		dec := n / 10
+		uni := n % 10
+		if uni == 0 {
+			return decenas[dec]
+		}
+		return decenas[dec] + " y " + unidades[uni]
+	}
+	if n < 1000 {
+		cent := n / 100
+		resto := n % 100
+		if cent == 1 && resto == 0 {
+			return "cien"
+		}
+		if cent == 1 {
+			return "ciento " + numberToSpanish(resto)
+		}
+		if resto == 0 {
+			return centenas[cent]
+		}
+		return centenas[cent] + " " + numberToSpanish(resto)
+	}
+	if n < 10000 {
+		miles := n / 1000
+		resto := n % 1000
+		if miles == 1 {
+			if resto == 0 {
+				return "mil"
+			}
+			return "mil " + numberToSpanish(resto)
+		}
+		if resto == 0 {
+			return numberToSpanish(miles) + " mil"
+		}
+		return numberToSpanish(miles) + " mil " + numberToSpanish(resto)
+	}
+
+	return "número fuera de rango (máximo 9999)"
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	num := r.URL.Query().Get("n")
-	if num == "" {
-		w.Write([]byte("Usa: ?n=10"))
+	numStr := r.URL.Query().Get("n")
+	if numStr == "" {
+		w.Write([]byte("Usa: ?n=10 (número entre 0 y 9999)"))
 		return
 	}
-
-	wsdlURL := "https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL"
-	
-	client := soap.NewClient(wsdlURL)
-	
-	request := &NumberToWords{
-		UbiNum: parseInt(num),
-	}
-	
-	response := &NumberToWordsResponse{}
-	
-	err := client.Call("http://www.dataaccess.com/webservicesserver/NumberToWords", request, response)
+	num, err := strconv.Atoi(numStr)
 	if err != nil {
-		w.Write([]byte(fmt.Sprintf("Error: %s", err.Error())))
+		w.Write([]byte("Error: El parámetro debe ser un número"))
 		return
 	}
-	resultadoEspanol := traducirConGoogle(response.Result)
-	
-	w.Write([]byte(resultadoEspanol))
+	if num < 0 || num > 9999 {
+		w.Write([]byte("Error: Número fuera de rango (0-9999)"))
+		return
+	}
+	resultado := numberToSpanish(num)
+	w.Write([]byte(resultado))
 }
-
-func traducirConGoogle(texto string) string {
-	url := fmt.Sprintf("https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=%s", url.QueryEscape(texto))
-	
-	resp, err := http.Get(url)
-	if err != nil {
-		return texto
-	}
-	defer resp.Body.Close()
-	
-	body, _ := ioutil.ReadAll(resp.Body)
-	
-	var data []interface{}
-	err = json.Unmarshal(body, &data)
-	if err != nil {
-		return texto
-	}
-	if len(data) > 0 {
-		firstArray, ok := data[0].([]interface{})
-		if ok && len(firstArray) > 0 {
-			var traduccion string
-			for _, item := range firstArray {
-				itemArray, ok := item.([]interface{})
-				if ok && len(itemArray) > 0 {
-					if str, ok := itemArray[0].(string); ok {
-						traduccion += str
-					}
-				}
-			}
-			if traduccion != "" {
-				return traduccion
-			}
-		}
-	}
-	
-	return texto
-}
-
-func parseInt(s string) int {
-	var i int
-	fmt.Sscanf(s, "%d", &i)
-	return i
+func main() {
+	http.HandleFunc("/", handler)
+	fmt.Println("Servidor iniciado en http://localhost:8080")
+	fmt.Println("Ejemplo: http://localhost:8080/?n=10")
+	http.ListenAndServe(":8080", nil)
 }
