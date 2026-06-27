@@ -1,0 +1,24 @@
+{
+  "name": "cliente-soap--desarrollo-web-integral-",
+  "version": "1.0.0",
+  "description": "\"# Cliente SOAP\"",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BrandonDeaquino/Cliente-SOAP--Desarrollo-Web-Integral-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/BrandonDeaquino/Cliente-SOAP--Desarrollo-Web-Integral-/issues"
+  },
+  "homepage": "https://github.com/BrandonDeaquino/Cliente-SOAP--Desarrollo-Web-Integral-#readme",
+  "dependencies": {
+    "soap": "^1.9.3"
+  }
+}
