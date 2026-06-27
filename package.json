@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/BrandonDeaquino/Cliente-SOAP--Desarrollo-Web-Integral-#readme",
   "dependencies": {
+    "@vitalets/google-translate-api": "^9.2.1",
     "soap": "^1.9.3"
   }
 }
