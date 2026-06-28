@@ -65,6 +65,44 @@ std::string extraerResultado(const std::string& xml) {
     return "No se encontró resultado";
 }
 
+std::string traducirConGoogle(const std::string& texto) {
+    if (texto.empty() || texto.find("No se encontró") != std::string::npos) {
+        return texto;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return texto;
+
+    char* textoCodificado = curl_easy_escape(curl, texto.c_str(), texto.length());
+    std::string url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=" + std::string(textoCodificado);
+    curl_free(textoCodificado);
+
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        std::cerr << "Error en traducción: " << curl_easy_strerror(res) << std::endl;
+        return texto;
+    }
+
+    std::regex pattern("\\[\\[\\[\"([^\"]+)\"");
+    std::smatch match;
+    if (std::regex_search(response, match, pattern)) {
+        return match[1].str();
+    }
+
+    return texto;
+}
+
 std::string obtenerParametro(const std::string& request) {
     std::regex pattern("GET /\\?n=([^ ]*)");
     std::smatch match;
@@ -80,12 +118,7 @@ void enviarRespuesta(SOCKET clientSocket, const std::string& body) {
     response += "Content-Length: " + std::to_string(body.length()) + "\r\n";
     response += "Connection: close\r\n\r\n";
     response += body;
-    
-    int sent = send(clientSocket, response.c_str(), response.length(), 0);
-    if (sent == SOCKET_ERROR) {
-        std::cerr << "Error al enviar respuesta: " << WSAGetLastError() << std::endl;
-    }
-    
+    send(clientSocket, response.c_str(), response.length(), 0);
     closesocket(clientSocket);
 }
 
@@ -140,9 +173,15 @@ int main() {
             }
 
             std::string response = hacerPeticionSOAP(num);
-            std::string resultado = extraerResultado(response);
+            std::string resultadoIngles = extraerResultado(response);
 
-            enviarRespuesta(clientSocket, resultado);
+            std::cout << "Resultado en inglés: " << resultadoIngles << std::endl;
+
+            std::string resultadoEspanol = traducirConGoogle(resultadoIngles);
+
+            std::cout << "Traducción a español: " << resultadoEspanol << std::endl;
+
+            enviarRespuesta(clientSocket, resultadoEspanol);
         } else {
             closesocket(clientSocket);
         }
