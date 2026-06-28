@@ -4,103 +4,79 @@
 #include <ws2tcpip.h>
 #include <regex>
 #include <sstream>
-#include <curl/curl.h>
+#include <vector>
 
 #pragma comment(lib, "ws2_32.lib")
 
-size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
-    size_t total = size * nmemb;
-    output->append((char*)contents, total);
-    return total;
-}
+std::string numberToSpanish(int n) {
+    std::vector<std::string> unidades = {"cero", "uno", "dos", "tres", "cuatro", 
+                                          "cinco", "seis", "siete", "ocho", "nueve"};
+    std::vector<std::string> especiales = {"diez", "once", "doce", "trece", "catorce", 
+                                            "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve"};
+    std::vector<std::string> decenas = {"", "diez", "veinte", "treinta", "cuarenta",
+                                         "cincuenta", "sesenta", "setenta", "ochenta", "noventa"};
+    std::vector<std::string> centenas = {"", "cien", "doscientos", "trescientos", "cuatrocientos",
+                                          "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"};
 
-std::string hacerPeticionSOAP(const std::string& num) {
-    std::string soapRequest = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" 
-        "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">"
-        "  <soap:Body>"
-        "    <NumberToWords xmlns=\"http://www.dataaccess.com/webservicesserver/\">"
-        "      <ubiNum>" + num + "</ubiNum>"
-        "    </NumberToWords>"
-        "  </soap:Body>"
-        "</soap:Envelope>";
-
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        return "Error al inicializar curl";
+    if (n == 0) {
+        return "cero";
     }
 
-    std::string response;
-    struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: text/xml; charset=utf-8");
-    headers = curl_slist_append(headers, "SOAPAction: \"http://www.dataaccess.com/webservicesserver/NumberToWords\"");
-
-    curl_easy_setopt(curl, CURLOPT_URL, "https://www.dataaccess.com/webservicesserver/NumberConversion.wso");
-    curl_easy_setopt(curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, soapRequest.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, soapRequest.length());
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
-
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-    curl_slist_free_all(headers);
-
-    if (res != CURLE_OK) {
-        return "Error en petición SOAP: " + std::string(curl_easy_strerror(res));
+    if (n < 10) {
+        return unidades[n];
     }
 
-    return response;
-}
-
-std::string extraerResultado(const std::string& xml) {
-    std::regex pattern("<[^>]*NumberToWordsResult[^>]*>(.*?)</[^>]*NumberToWordsResult>");
-    std::smatch match;
-    if (std::regex_search(xml, match, pattern)) {
-        return match[1].str();
-    }
-    return "No se encontró resultado";
-}
-
-std::string traducirConGoogle(const std::string& texto) {
-    if (texto.empty() || texto.find("No se encontró") != std::string::npos) {
-        return texto;
+    if (n < 20) {
+        return especiales[n - 10];
     }
 
-    CURL* curl = curl_easy_init();
-    if (!curl) return texto;
-
-    char* textoCodificado = curl_easy_escape(curl, texto.c_str(), texto.length());
-    std::string url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=" + std::string(textoCodificado);
-    curl_free(textoCodificado);
-
-    std::string response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
-
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        std::cerr << "Error en traducción: " << curl_easy_strerror(res) << std::endl;
-        return texto;
+    if (n < 30) {
+        if (n == 20) {
+            return "veinte";
+        }
+        return "veinti" + unidades[n - 20];
     }
 
-    std::regex pattern("\\[\\[\\[\"([^\"]+)\"");
-    std::smatch match;
-    if (std::regex_search(response, match, pattern)) {
-        return match[1].str();
+    if (n < 100) {
+        int dec = n / 10;
+        int uni = n % 10;
+        if (uni == 0) {
+            return decenas[dec];
+        }
+        return decenas[dec] + " y " + unidades[uni];
     }
 
-    return texto;
+    if (n < 1000) {
+        int cent = n / 100;
+        int resto = n % 100;
+        if (cent == 1 && resto == 0) {
+            return "cien";
+        }
+        if (cent == 1) {
+            return "ciento " + numberToSpanish(resto);
+        }
+        if (resto == 0) {
+            return centenas[cent];
+        }
+        return centenas[cent] + " " + numberToSpanish(resto);
+    }
+
+    if (n < 10000) {
+        int miles = n / 1000;
+        int resto = n % 1000;
+        if (miles == 1) {
+            if (resto == 0) {
+                return "mil";
+            }
+            return "mil " + numberToSpanish(resto);
+        }
+        if (resto == 0) {
+            return numberToSpanish(miles) + " mil";
+        }
+        return numberToSpanish(miles) + " mil " + numberToSpanish(resto);
+    }
+
+    return "número fuera de rango (máximo 9999)";
 }
 
 std::string obtenerParametro(const std::string& request) {
@@ -123,8 +99,6 @@ void enviarRespuesta(SOCKET clientSocket, const std::string& body) {
 }
 
 int main() {
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
@@ -150,7 +124,7 @@ int main() {
 
     std::cout << "Servidor iniciado en http://localhost:8080" << std::endl;
     std::cout << "Ejemplo: http://localhost:8080/?n=10" << std::endl;
-    std::cout << "Usando WSDL: https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL" << std::endl;
+    std::cout << "VERSIÓN 3: Conversión nativa a español (código base del lenguaje)" << std::endl;
     std::cout << "Esperando peticiones..." << std::endl;
 
     while (true) {
@@ -158,37 +132,42 @@ int main() {
         if (clientSocket == INVALID_SOCKET) {
             continue;
         }
-
         char buffer[4096];
         int bytesRecibidos = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
         if (bytesRecibidos > 0) {
             buffer[bytesRecibidos] = '\0';
             std::string request(buffer);
 
-            std::string num = obtenerParametro(request);
+            std::string numStr = obtenerParametro(request);
 
-            if (num.empty()) {
-                enviarRespuesta(clientSocket, "Usa: ?n=10");
+            if (numStr.empty()) {
+                enviarRespuesta(clientSocket, "Usa: ?n=10 (número entre 0 y 9999)");
                 continue;
             }
 
-            std::string response = hacerPeticionSOAP(num);
-            std::string resultadoIngles = extraerResultado(response);
+            try {
+                int num = std::stoi(numStr);
 
-            std::cout << "Resultado en inglés: " << resultadoIngles << std::endl;
+                if (num < 0 || num > 9999) {
+                    enviarRespuesta(clientSocket, "Error: Número fuera de rango (0-9999)");
+                    continue;
+                }
 
-            std::string resultadoEspanol = traducirConGoogle(resultadoIngles);
+                std::string resultado = numberToSpanish(num);
 
-            std::cout << "Traducción a español: " << resultadoEspanol << std::endl;
+                std::cout << "Número: " << num << " → " << resultado << std::endl;
 
-            enviarRespuesta(clientSocket, resultadoEspanol);
-        } else {
-            closesocket(clientSocket);
+                enviarRespuesta(clientSocket, resultado);
+
+            } catch (const std::exception& e) {
+                enviarRespuesta(clientSocket, "Error: El parámetro debe ser un número");
+            }
         }
+
+        closesocket(clientSocket);
     }
 
     closesocket(listenSocket);
     WSACleanup();
-    curl_global_cleanup();
     return 0;
 }
