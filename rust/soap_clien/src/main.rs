@@ -1,72 +1,75 @@
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use regex::Regex;
-use reqwest::blocking::Client;
 
-fn extraer_resultado(xml: &str) -> String {
-    let re = Regex::new(r"<[^>]*NumberToWordsResult[^>]*>(.*?)</[^>]*NumberToWordsResult>").unwrap();
-    if let Some(cap) = re.captures(xml) {
-        return cap[1].to_string();
+fn number_to_spanish(n: i32) -> String {
+    let unidades = vec!["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
+    let especiales = vec!["diez", "once", "doce", "trece", "catorce", "quince", 
+                          "dieciséis", "diecisiete", "dieciocho", "diecinueve"];
+    let decenas = vec!["", "diez", "veinte", "treinta", "cuarenta", "cincuenta",
+                       "sesenta", "setenta", "ochenta", "noventa"];
+    let centenas = vec!["", "cien", "doscientos", "trescientos", "cuatrocientos",
+                        "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+
+    if n == 0 {
+        return "cero".to_string();
     }
-    "No se encontró resultado".to_string()
-}
 
-fn hacer_peticion_soap(num: &str) -> String {
-    let soap_request = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <NumberToWords xmlns="http://www.dataaccess.com/webservicesserver/">
-      <ubiNum>{}</ubiNum>
-    </NumberToWords>
-  </soap:Body>
-</soap:Envelope>"#,
-        num
-    );
+    if n < 10 {
+        return unidades[n as usize].to_string();
+    }
 
-    let client = Client::new();
-    let response = client
-        .post("https://www.dataaccess.com/webservicesserver/NumberConversion.wso")
-        .header("Content-Type", "text/xml; charset=utf-8")
-        .header("SOAPAction", "\"http://www.dataaccess.com/webservicesserver/NumberToWords\"")
-        .body(soap_request)
-        .send();
+    if n < 20 {
+        return especiales[(n - 10) as usize].to_string();
+    }
 
-    match response {
-        Ok(resp) => {
-            if let Ok(body) = resp.text() {
-                return body;
+    if n < 30 {
+        if n == 20 {
+            return "veinte".to_string();
+        }
+        return format!("veinti{}", unidades[(n - 20) as usize]);
+    }
+
+    if n < 100 {
+        let dec = n / 10;
+        let uni = n % 10;
+        if uni == 0 {
+            return decenas[dec as usize].to_string();
+        }
+        return format!("{} y {}", decenas[dec as usize], unidades[uni as usize]);
+    }
+
+    if n < 1000 {
+        let cent = n / 100;
+        let resto = n % 100;
+        if cent == 1 && resto == 0 {
+            return "cien".to_string();
+        }
+        if cent == 1 {
+            return format!("ciento {}", number_to_spanish(resto));
+        }
+        if resto == 0 {
+            return centenas[cent as usize].to_string();
+        }
+        return format!("{} {}", centenas[cent as usize], number_to_spanish(resto));
+    }
+
+    if n < 10000 {
+        let miles = n / 1000;
+        let resto = n % 1000;
+        if miles == 1 {
+            if resto == 0 {
+                return "mil".to_string();
             }
-            "Error al leer respuesta".to_string()
+            return format!("mil {}", number_to_spanish(resto));
         }
-        Err(e) => format!("Error en petición SOAP: {}", e),
+        if resto == 0 {
+            return format!("{} mil", number_to_spanish(miles));
+        }
+        return format!("{} mil {}", number_to_spanish(miles), number_to_spanish(resto));
     }
-}
 
-fn traducir_con_google(texto: &str) -> String {
-    let client = Client::new();
-    let url = format!(
-        "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q={}",
-        urlencoding::encode(texto)
-    );
-
-    match client.get(&url).send() {
-        Ok(resp) => {
-            if let Ok(json) = resp.text() {
-                if let Some(start) = json.find("[[\"") {
-                    let start = start + 3;
-                    if let Some(end) = json[start..].find("\"") {
-                        return json[start..start + end].to_string();
-                    }
-                }
-            }
-            texto.to_string()
-        }
-        Err(e) => {
-            eprintln!("Error en traducción: {}", e);
-            texto.to_string()
-        }
-    }
+    "número fuera de rango (máximo 9999)".to_string()
 }
 
 fn obtener_parametro(request: &str) -> Option<String> {
@@ -95,7 +98,7 @@ fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").expect("Error al bindear");
     println!("Servidor iniciado en http://localhost:8080");
     println!("Ejemplo: http://localhost:8080/?n=10");
-    println!("Usando WSDL: https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL");
+    println!("VERSIÓN 3: Conversión nativa a español (código base del lenguaje)");
     println!("Esperando peticiones...");
 
     for stream in listener.incoming() {
@@ -105,17 +108,21 @@ fn main() {
                 match stream.read(&mut buffer) {
                     Ok(size) => {
                         let request = String::from_utf8_lossy(&buffer[..size]);
-                        let num = obtener_parametro(&request);
+                        let num_str = obtener_parametro(&request);
 
-                        if let Some(num) = num {
-                            let response = hacer_peticion_soap(&num);
-                            let resultado_ingles = extraer_resultado(&response);
-
-                            let resultado_espanol = traducir_con_google(&resultado_ingles);
-
-                            enviar_respuesta(stream, &resultado_espanol);
+                        if let Some(num_str) = num_str {
+                            if let Ok(num) = num_str.parse::<i32>() {
+                                if num < 0 || num > 9999 {
+                                    enviar_respuesta(stream, "Error: Número fuera de rango (0-9999)");
+                                } else {
+                                    let resultado = number_to_spanish(num);
+                                    enviar_respuesta(stream, &resultado);
+                                }
+                            } else {
+                                enviar_respuesta(stream, "Error: El parámetro debe ser un número");
+                            }
                         } else {
-                            enviar_respuesta(stream, "Usa: ?n=10");
+                            enviar_respuesta(stream, "Usa: ?n=10 (número entre 0 y 9999)");
                         }
                     }
                     Err(e) => {
